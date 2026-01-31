@@ -109,6 +109,23 @@ pub trait CoreInterface: MemoryInterface {
     /// Returns `true` if hardware breakpoints are enabled, `false` otherwise.
     fn hw_breakpoints_enabled(&self) -> bool;
 
+    /// Sets a software breakpoint at `addr` by replacing the instruction with BKPT.
+    /// The original instruction is saved so it can be restored later.
+    /// Only works for writable memory (RAM). Returns an error if not supported.
+    fn set_sw_breakpoint(&mut self, _addr: u64) -> Result<(), Error> {
+        Err(Error::NotImplemented("software breakpoints"))
+    }
+
+    /// Clears a software breakpoint at `addr` by restoring the original instruction.
+    fn clear_sw_breakpoint(&mut self, _addr: u64) -> Result<(), Error> {
+        Err(Error::NotImplemented("software breakpoints"))
+    }
+
+    /// Returns the addresses of all active software breakpoints.
+    fn sw_breakpoint_addresses(&self) -> Vec<u64> {
+        vec![]
+    }
+
     /// Get the `Architecture` of the Core.
     fn architecture(&self) -> Architecture;
 
@@ -487,6 +504,68 @@ impl<'probe> Core<'probe> {
             self.clear_hw_breakpoint(breakpoint)?
         }
         Ok(())
+    }
+
+    /// Set a software breakpoint at `address`.
+    ///
+    /// Replaces the instruction at `address` with a BKPT instruction.
+    /// The original instruction is saved and restored when the breakpoint is cleared.
+    /// Only works for writable memory (RAM).
+    #[tracing::instrument(skip(self))]
+    pub fn set_sw_breakpoint(&mut self, address: u64) -> Result<(), Error> {
+        tracing::debug!("Setting SW breakpoint at {:#010x}", address);
+        self.inner.set_sw_breakpoint(address)
+    }
+
+    /// Clear a software breakpoint at `address`.
+    ///
+    /// Restores the original instruction that was replaced by the BKPT instruction.
+    #[tracing::instrument(skip(self))]
+    pub fn clear_sw_breakpoint(&mut self, address: u64) -> Result<(), Error> {
+        tracing::debug!("Clearing SW breakpoint at {:#010x}", address);
+        self.inner.clear_sw_breakpoint(address)
+    }
+
+    /// Clear all software breakpoints, restoring original instructions.
+    #[tracing::instrument(skip(self))]
+    pub fn clear_all_sw_breakpoints(&mut self) -> Result<(), Error> {
+        let addresses: Vec<u64> = self.inner.sw_breakpoint_addresses();
+        for addr in addresses {
+            self.clear_sw_breakpoint(addr)?;
+        }
+        Ok(())
+    }
+
+    /// Set a breakpoint at `address`, automatically choosing hardware or software.
+    ///
+    /// Tries hardware breakpoint first. If the address is not in the hardware breakpoint
+    /// range (e.g. code in RAM on Cortex-M0+), falls back to software breakpoint.
+    #[tracing::instrument(skip(self))]
+    pub fn set_breakpoint(&mut self, address: u64) -> Result<(), Error> {
+        match self.set_hw_breakpoint(address) {
+            Ok(()) => Ok(()),
+            Err(Error::Arm(_)) | Err(Error::Other(_)) => {
+                tracing::debug!(
+                    "HW breakpoint failed at {:#010x}, trying SW breakpoint",
+                    address
+                );
+                self.set_sw_breakpoint(address)
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Clear a breakpoint at `address` (hardware or software).
+    #[tracing::instrument(skip(self))]
+    pub fn clear_breakpoint(&mut self, address: u64) -> Result<(), Error> {
+        // Try HW first, then SW
+        match self.clear_hw_breakpoint(address) {
+            Ok(()) => Ok(()),
+            Err(Error::BreakpointOperation(BreakpointError::NotFound(_))) => {
+                self.clear_sw_breakpoint(address)
+            }
+            Err(e) => Err(e),
+        }
     }
 
     /// Returns the architecture of the core.

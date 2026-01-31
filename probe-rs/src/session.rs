@@ -880,6 +880,21 @@ impl Session {
         })
     }
 
+    /// Clears all software breakpoints on all cores
+    pub fn clear_all_sw_breakpoints(&mut self) -> Result<(), Error> {
+        self.halted_access(|session| {
+            { 0..session.cores.len() }.try_for_each(|core| {
+                tracing::info!("Clearing software breakpoints for core {core}");
+
+                match session.core(core) {
+                    Ok(mut core) => core.clear_all_sw_breakpoints(),
+                    Err(Error::CoreDisabled(_)) => Ok(()),
+                    Err(err) => Err(err),
+                }
+            })
+        })
+    }
+
     /// Resume all cores
     pub fn resume_all_cores(&mut self) -> Result<(), Error> {
         // Resume cores
@@ -912,6 +927,13 @@ impl Drop for Session {
         if let Err(err) = self.clear_all_hw_breakpoints() {
             tracing::warn!(
                 "Could not clear all hardware breakpoints: {:?}",
+                anyhow::anyhow!(err)
+            );
+        }
+
+        if let Err(err) = self.clear_all_sw_breakpoints() {
+            tracing::warn!(
+                "Could not clear all software breakpoints: {:?}",
                 anyhow::anyhow!(err)
             );
         }

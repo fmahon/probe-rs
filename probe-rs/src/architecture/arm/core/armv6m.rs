@@ -836,6 +836,61 @@ impl CoreInterface for Armv6m<'_> {
         Ok(())
     }
 
+    fn set_sw_breakpoint(&mut self, addr: u64) -> Result<(), Error> {
+        valid_32bit_address(addr)?;
+
+        // Already set?
+        if self.state.sw_breakpoints.contains_key(&addr) {
+            return Ok(());
+        }
+
+        // Read the original 16-bit Thumb instruction
+        let original = self.memory.read_word_16(addr)?;
+
+        // Save it
+        self.state.sw_breakpoints.insert(addr, original);
+
+        // Write BKPT #0 (Thumb encoding: 0xBE00)
+        self.memory.write_word_16(addr, 0xBE00)?;
+
+        tracing::debug!(
+            "SW breakpoint set at {:#010x} (original instruction: {:#06x})",
+            addr,
+            original
+        );
+
+        Ok(())
+    }
+
+    fn clear_sw_breakpoint(&mut self, addr: u64) -> Result<(), Error> {
+        valid_32bit_address(addr)?;
+
+        let original = self
+            .state
+            .sw_breakpoints
+            .remove(&addr)
+            .ok_or_else(|| {
+                Error::Other(format!(
+                    "No software breakpoint set at address {addr:#010x}"
+                ))
+            })?;
+
+        // Restore original instruction
+        self.memory.write_word_16(addr, original)?;
+
+        tracing::debug!(
+            "SW breakpoint cleared at {:#010x} (restored instruction: {:#06x})",
+            addr,
+            original
+        );
+
+        Ok(())
+    }
+
+    fn sw_breakpoint_addresses(&self) -> Vec<u64> {
+        self.state.sw_breakpoints.keys().copied().collect()
+    }
+
     fn registers(&self) -> &'static CoreRegisters {
         &CORTEX_M_CORE_REGISTERS
     }

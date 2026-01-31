@@ -1,6 +1,7 @@
 //! The different ARM core implementations with all constants and custom handling.
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 use crate::{
     CoreStatus, HaltReason,
@@ -143,6 +144,9 @@ pub struct CortexMState {
 
     /// The semihosting command that was decoded at the current program counter
     semihosting_command: Option<SemihostingCommand>,
+
+    /// Active software breakpoints: address -> original 16-bit Thumb instruction
+    pub(crate) sw_breakpoints: HashMap<u64, u16>,
 }
 
 impl CortexMState {
@@ -153,6 +157,7 @@ impl CortexMState {
             current_state: CoreStatus::Unknown,
             fp_present: false,
             semihosting_command: None,
+            sw_breakpoints: HashMap::new(),
         }
     }
 

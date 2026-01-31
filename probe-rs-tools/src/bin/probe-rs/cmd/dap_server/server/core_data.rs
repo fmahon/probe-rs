@@ -333,9 +333,9 @@ impl CoreHandle<'_> {
         }
 
         self.core
-            .set_hw_breakpoint(address)
+            .set_breakpoint(address)
             .map_err(DebuggerError::ProbeRs)?;
-        // Wait until the set of the hw breakpoint succeeded, before we cache it here ...
+        // Wait until the breakpoint was set successfully, before we cache it here ...
         self.core_data
             .breakpoints
             .push(session_data::ActiveBreakpoint {
@@ -349,7 +349,7 @@ impl CoreHandle<'_> {
     ///
     /// Returns whether the breakpoint was successfully cleared.
     pub(crate) fn clear_breakpoint(&mut self, address: u64) -> Result<bool> {
-        match self.core.clear_hw_breakpoint(address) {
+        match self.core.clear_breakpoint(address) {
             Ok(_) => {}
             Err(probe_rs::Error::BreakpointOperation(BreakpointError::NotFound(_addr))) => {}
             Err(e) => return Err(DebuggerError::ProbeRs(e).into()),

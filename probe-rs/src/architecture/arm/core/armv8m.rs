@@ -460,6 +460,31 @@ impl CoreInterface for Armv8m<'_> {
         Ok(())
     }
 
+    fn set_sw_breakpoint(&mut self, addr: u64) -> Result<(), Error> {
+        valid_32bit_address(addr)?;
+        if self.state.sw_breakpoints.contains_key(&addr) {
+            return Ok(());
+        }
+        let original = self.memory.read_word_16(addr)?;
+        self.state.sw_breakpoints.insert(addr, original);
+        self.memory.write_word_16(addr, 0xBE00)?;
+        tracing::debug!("SW breakpoint set at {:#010x} (original: {:#06x})", addr, original);
+        Ok(())
+    }
+
+    fn clear_sw_breakpoint(&mut self, addr: u64) -> Result<(), Error> {
+        valid_32bit_address(addr)?;
+        let original = self.state.sw_breakpoints.remove(&addr)
+            .ok_or_else(|| Error::Other(format!("No software breakpoint at {addr:#010x}")))?;
+        self.memory.write_word_16(addr, original)?;
+        tracing::debug!("SW breakpoint cleared at {:#010x} (restored: {:#06x})", addr, original);
+        Ok(())
+    }
+
+    fn sw_breakpoint_addresses(&self) -> Vec<u64> {
+        self.state.sw_breakpoints.keys().copied().collect()
+    }
+
     fn registers(&self) -> &'static CoreRegisters {
         let main = true; // TODO m33 is mainline, no one has m23 (baseline) yet
         let security = self.security;
